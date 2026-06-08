@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEON BLOCK 10×10 - 中心對齊流暢版</title>
+    <style>
+        :root {
+            --bg-color: #0b0b10;
+            --grid-bg: #14141f;
+            --cell-empty: #1e1e2d;
+            --text-color: #ffffff;
+            --accent-color: #ff4757;
+            --selected-color: #00f5d4;
+        }
+
+        body {
+            margin: 0;
+            padding: 15px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        h1 {
+            margin: 5px 0 10px 0;
+            font-size: 24px;
+            letter-spacing: 2px;
+            background: linear-gradient(45deg, #00f5d4, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        #scoreboard {
+            display: flex;
+            gap: 20px;
+            font-size: 18px;
+            margin-bottom: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 24px;
+            border-radius: 20px;
+            align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #combo-badge {
+            color: #ffee32;
+            font-weight: bold;
+            display: none;
+            text-shadow: 0 0 15px rgba(255, 238, 50, 0.8);
+            animation: pulse 0.4s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from { transform: scale(1); }
+            to { transform: scale(1.08); }
+        }
+
+        /* 10x10 正方形棋盤 */
+        #board {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+            gap: 4px;
+            width: 100%;
+            max-width: 380px;
+            aspect-ratio: 1 / 1;
+            background-color: var(--grid-bg);
+            padding: 8px;
+            border-radius: 12px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+            box-sizing: border-box;
+        }
+
+        .cell {
+            background-color: var(--cell-empty);
+            border-radius: 4px;
+            transition: background-color 0.1s, opacity 0.1s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        /* 消除時的閃爍特效 */
+        .cell.eliminating {
+            animation: flashAnimation 0.4s ease-out forwards;
+        }
+
+        @keyframes flashAnimation {
+            0% {
+                background-color: #ffffff;
+                box-shadow: 0 0 20px #ffffff, 0 0 40px var(--selected-color);
+                transform: scale(1.1);
+                z-index: 2;
+            }
+            50% {
+                background-color: var(--selected-color);
+                box-shadow: 0 0 15px var(--selected-color);
+                transform: scale(1.05);
+            }
+            100% {
+                background-color: var(--cell-empty);
+                transform: scale(1);
+                z-index: 1;
+            }
+        }
+
+        /* 下方積木架 */
+        #rack {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            width: 100%;
+            max-width: 380px;
+            height: 120px;
+            margin-top: 20px;
+            background: rgba(20, 20, 31, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+
+        .shape-container {
+            width: 105px;
+            height: 105px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+            background: rgba(255,255,255,0.01);
+        }
+
+        .shape-container.selected {
+            border-color: var(--selected-color);
+            background: rgba(0, 245, 212, 0.12);
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(0, 245, 212, 0.25);
+        }
+
+        .shape-grid {
+            display: grid;
+            gap: 2px;
+        }
+
+        /* 音樂控制按鈕 */
+        #bgm-btn {
+            margin-top: 10px;
+            padding: 6px 16px;
+            font-size: 13px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #ccc;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            cursor: pointer;
+        }
+        #bgm-btn.playing {
+            background: rgba(0, 245, 212, 0.15);
+            color: var(--selected-color);
+            border-color: var(--selected-color);
+        }
+
+        /* 遊戲結束畫面 */
+        #game-over {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(8, 8, 12, 0.96);
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        #game-over h2 {
+            font-size: 36px;
+            color: var(--accent-color);
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(255, 71, 87, 0.4);
+        }
+
+        #restart-btn {
+            padding: 12px 32px;
+            font-size: 18px;
+            background: linear-gradient(45deg, #00f5d4, #00bbf9);
+            color: #000;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            margin-top: 20px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 245, 212, 0.4);
+        }
+        
+        .tip {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #626280;
+            text-align: center;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>NEON BLOCK 10×10</h1>
+    <div id="scoreboard">
+        <div>分數: <span id="score">0</span></div>
+        <div id="combo-badge">Combo x<span id="combo">1</span></div>
+    </div>
+
+    <div id="board"></div>
+    <div id="rack"></div>
+    
+    <button id="bgm-btn" onclick="toggleBGM()">🎵 背景音樂: 關閉</button>
+    
+    <div class="tip">
+        🎯 <b>體驗更新：積木現在會以你的滑鼠/手指點擊點為「中心點」進行對齊與放置！</b><br>
+        💡 點擊下方積木選取，點擊棋盤放置。同一輪（三個內）有消除，Combo 就會累積！
+    </div>
+
+    <div id="game-over">
+        <h2>遊戲結束!</h2>
+        <p style="font-size: 20px;">最終分數: <span id="final-score" style="color: #00f5d4; font-weight: bold;">0</span></p>
+        <button id="restart-btn" onclick="resetGame()">重新開始</button>
+    </div>
+
+    <script>
+        // ==========================================
+        // 音效系統 (Web Audio API 虛擬合成器)
+        // ==========================================
+        let audioCtx = null;
+        let bgmInterval = null;
+        let isBgmPlaying = false;
+        let bgmStep = 0;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playPlaceSound() {
+            initAudio();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.08);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.08);
+        }
+
+        function playEliminateSound() {
+            initAudio();
+            const now = audioCtx.currentTime;
+            [523.25, 659.25, 783.99].forEach((freq, index) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + index * 0.05);
+                osc.frequency.exponentialRampToValueAtTime(freq * 2, now + index * 0.05 + 0.2);
+                gain.gain.setValueAtTime(0.15, now + index * 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + index * 0.05 + 0.2);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + index * 0.05);
+                osc.stop(now + index * 0.05 + 0.2);
+            });
+        }
+
+        const bgmNotes = [
+            261.63, 329.63, 392.00, 329.63, 293.66, 349.23, 440.00, 349.23,
+            329.63, 392.00, 493.88, 392.00, 349.23, 440.00, 523.25, 440.00
+        ];
+
+        function startBGM() {
+            initAudio();
+            if (bgmInterval) clearInterval(bgmInterval);
+            bgmInterval = setInterval(() => {
+                if (!isBgmPlaying) return;
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(bgmNotes[bgmStep % bgmNotes.length], now);
+                gain.gain.setValueAtTime(0.04, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.25);
+                bgmStep++;
+            }, 300);
+        }
+
+        function toggleBGM() {
+            initAudio();
+            const btn = document.getElementById('bgm-btn');
+            if (!isBgmPlaying) {
+                isBgmPlaying = true;
+                btn.innerText = "🎵 背景音樂: 開啟中";
+                btn.classList.add('playing');
+                startBGM();
+            } else {
+                isBgmPlaying = false;
+                btn.innerText = "🎵 背景音樂: 關閉";
+                btn.classList.remove('playing');
+                if (bgmInterval) clearInterval(bgmInterval);
+            }
+        }
+
+        // ==========================================
+        // 核心遊戲邏輯
+        // ==========================================
+        const BOARD_SIZE = 10;
+        let boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+        let score = 0;
+        let combo = 0;
+        let remainingShapes = 0;
+        let eliminatedInThisRound = false;
+
+        let selectedRackIndex = null;
+        let currentRackShapes = [null, null, null];
+
+        const SHAPES = [
+            { name: 'O1', color: '#00f5d4', matrix: [[1]] },
+            { name: 'I2', color: '#00e5ff', matrix: [[1, 1]] },
+            { name: 'V2', color: '#00bbf9', matrix: [[1], [1]] },
+            { name: 'I3', color: '#0096c7', matrix: [[1, 1, 1]] },
+            { name: 'V3', color: '#0077b6', matrix: [[1], [1], [1]] },
+            { name: 'I4', color: '#03045e', matrix: [[1, 1, 1, 1]] },
+            { name: 'I5', color: '#3a0ca3', matrix: [[1, 1, 1, 1, 1]] },
+            { name: 'O4', color: '#4361ee', matrix: [[1, 1], [1, 1]] },
+            { name: 'O9', color: '#7209b7', matrix: [[1, 1, 1], [1, 1, 1], [1, 1, 1]] },
+            { name: 'L',  color: '#4cc9f0', matrix: [[1, 0], [1, 0], [1, 1]] },
+            { name: 'J',  color: '#a2d2ff', matrix: [[0, 1], [0, 1], [1, 1]] },
+            { name: 'BigL',color: '#b5179e', matrix: [[1, 0, 0], [1, 0, 0], [1, 1, 1]] },
+            { name: 'T',  color: '#f72585', matrix: [[1, 1, 1], [0, 1, 0]] },
+            { name: 'Z',  color: '#ff007f', matrix: [[1, 1, 0], [0, 1, 1]] },
+            { name: 'S',  color: '#700fff', matrix: [[0, 1, 1], [1, 1, 0]] },
+            { name: 'Cross',color: '#9d4edd', matrix: [[0, 1, 0], [1, 1, 1], [0, 1, 0]] }
+        ];
+
+        const boardEl = document.getElementById('board');
+        const rackEl = document.getElementById('rack');
+
+        // 【新增核心輔助函數】：計算形狀的中心點偏移量
+        function getCenterOffset(matrix) {
+            const rows = matrix.length;
+            const cols = matrix[0].length;
+            return {
+                rowOffset: Math.floor((rows - 1) / 2),
+                colOffset: Math.floor((cols - 1) / 2)
+            };
+        }
+
+        function initBoard() {
+            boardEl.innerHTML = '';
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    
+                    cell.addEventListener('click', () => handleCellClick(r, c));
+                    cell.addEventListener('mouseenter', () => handleCellMouseEnter(r, c));
+                    cell.addEventListener('mouseleave', () => clearPreview());
+                    
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        function drawBoard() {
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cell = boardEl.children[r * BOARD_SIZE + c];
+                    if (boardState[r][c]) {
+                        cell.style.backgroundColor = boardState[r][c];
+                        cell.style.opacity = "1";
+                    } else {
+                        if (!cell.classList.contains('eliminating')) {
+                            cell.style.backgroundColor = 'var(--cell-empty)';
+                            cell.style.opacity = "1";
+                        }
+                    }
+                }
+            }
+        }
+
+        // 以滑鼠所在的 (clickRow, clickCol) 為積木中心點進行預覽
+        function handleCellMouseEnter(clickRow, clickCol) {
+            if (selectedRackIndex === null) return;
+            const shape = currentRackShapes[selectedRackIndex];
+            if (!shape) return;
+
+            const { rowOffset, colOffset } = getCenterOffset(shape.matrix);
+            const startRow = clickRow - rowOffset;
+            const startCol = clickCol - colOffset;
+
+            if (canPlace(shape.matrix, startRow, startCol)) {
+                clearPreview();
+                for (let r = 0; r < shape.matrix.length; r++) {
+                    for (let c = 0; c < shape.matrix[r].length; c++) {
+                        if (shape.matrix[r][c] === 1) {
+                            const targetRow = startRow + r;
+                            const targetCol = startCol + c;
+                            const cell = boardEl.children[targetRow * BOARD_SIZE + targetCol];
+                            cell.style.backgroundColor = shape.color;
+                            cell.style.opacity = "0.5";
+                        }
+                    }
+                }
+            }
+        }
+
+        function clearPreview() {
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cell = boardEl.children[r * BOARD_SIZE + c];
+                    if (!boardState[r][c] && !cell.classList.contains('eliminating')) {
+                        cell.style.backgroundColor = 'var(--cell-empty)';
+                        cell.style.opacity = "1";
+                    }
+                }
+            }
+        }
+
+        function generateRack() {
+            rackEl.innerHTML = '';
+            currentRackShapes = [null, null, null];
+            selectedRackIndex = null;
+            eliminatedInThisRound = false;
+
+            for (let i = 0; i < 3; i++) {
+                const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+                currentRackShapes[i] = shape;
+                createRackItem(shape, i);
+            }
+            remainingShapes = 3;
+            checkGameOver();
+        }
+
+        function createRackItem(shape, index) {
+            const container = document.createElement('div');
+            container.classList.add('shape-container');
+            container.dataset.index = index;
+
+            const grid = document.createElement('div');
+            grid.classList.add('shape-grid');
+            grid.style.gridTemplateColumns = `repeat(${shape.matrix[0].length}, 1fr)`;
+            
+            const maxDim = Math.max(shape.matrix.length, shape.matrix[0].length);
+            const cellSize = Math.min(65 / maxDim, 18);
+
+            shape.matrix.forEach((row) => {
+                row.forEach((val) => {
+                    const block = document.createElement('div');
+                    block.style.width = `${cellSize}px`;
+                    block.style.height = `${cellSize}px`;
+                    if (val) {
+                        block.style.backgroundColor = shape.color;
+                        block.style.borderRadius = '2px';
+                    } else {
+                        block.style.backgroundColor = 'transparent';
+                    }
+                    grid.appendChild(block);
+                });
+            });
+
+            container.appendChild(grid);
+            rackEl.appendChild(container);
+
+            container.addEventListener('click', () => {
+                initAudio();
+                document.querySelectorAll('.shape-container').forEach(el => el.classList.remove('selected'));
+                selectedRackIndex = index;
+                container.classList.add('selected');
+                clearPreview();
+            });
+        }
+
+        // 以點擊的格子為積木中心點進行放置
+        function handleCellClick(clickRow, clickCol) {
+            if (selectedRackIndex === null) return;
+            
+            const shape = currentRackShapes[selectedRackIndex];
+            if (!shape) return;
+
+            // 計算從點擊點回推的矩陣左上角起點
+            const { rowOffset, colOffset } = getCenterOffset(shape.matrix);
+            const startRow = clickRow - rowOffset;
+            const startCol = clickCol - colOffset;
+
+            if (canPlace(shape.matrix, startRow, startCol)) {
+                placeShape(shape, startRow, startCol);
+                playPlaceSound();
+                
+                const container = rackEl.querySelector(`[data-index="${selectedRackIndex}"]`);
+                if (container) container.remove();
+                
+                currentRackShapes[selectedRackIndex] = null;
+                selectedRackIndex = null;
+                remainingShapes--;
+
+                checkLines();
+
+                if (remainingShapes === 0) {
+                    if (!eliminatedInThisRound) {
+                        combo = 0;
+                        hideComboBadge();
+                    }
+                    generateRack();
+                } else {
+                    checkGameOver();
+                }
+            }
+        }
+
+        function canPlace(matrix, startRow, startCol) {
+            // 起點超出棋盤上方或左方
+            if (startRow < 0 || startCol < 0) return false;
+
+            for (let r = 0; r < matrix.length; r++) {
+                for (let c = 0; c < matrix[r].length; c++) {
+                    if (matrix[r][c] === 1) {
+                        const targetRow = startRow + r;
+                        const targetCol = startCol + c;
+                        
+                        // 終點超出棋盤下方或右方，或是有既有方塊重疊
+                        if (targetRow >= BOARD_SIZE || targetCol >= BOARD_SIZE || 
+                            boardState[targetRow][targetCol] !== 0) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        function placeShape(shape, startRow, startCol) {
+            for (let r = 0; r < shape.matrix.length; r++) {
+                for (let c = 0; c < shape.matrix[r].length; c++) {
+                    if (shape.matrix[r][c] === 1) {
+                        boardState[startRow + r][startCol + c] = shape.color;
+                        score += 1; 
+                    }
+                }
+            }
+            clearPreview();
+            drawBoard();
+            updateScoreDisplay();
+        }
+
+        function checkLines() {
+            let rowsToEliminate = [];
+            let colsToEliminate = [];
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                if (boardState[r].every(val => val !== 0)) {
+                    rowsToEliminate.push(r);
+                }
+            }
+
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                let colFilled = true;
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    if (boardState[r][c] === 0) {
+                        colFilled = false;
+                        break;
+                    }
+                }
+                if (colFilled) colsToEliminate.push(c);
+            }
+
+            const totalLines = rowsToEliminate.length + colsToEliminate.length;
+
+            if (totalLines > 0) {
+                combo++; 
+                eliminatedInThisRound = true; 
+
+                const baseScore = totalLines * 10;
+                score += baseScore * combo;
+
+                playEliminateSound();
+
+                rowsToEliminate.forEach(r => {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        boardEl.children[r * BOARD_SIZE + c].classList.add('eliminating');
+                    }
+                    boardState[r].fill(0);
+                });
+
+                colsToEliminate.forEach(c => {
+                    for (let r = 0; r < BOARD_SIZE; r++) {
+                        boardEl.children[r * BOARD_SIZE + c].classList.add('eliminating');
+                        boardState[r][c] = 0;
+                    }
+                });
+
+                setTimeout(() => {
+                    const cells = boardEl.querySelectorAll('.cell.eliminating');
+                    cells.forEach(cell => cell.classList.remove('eliminating'));
+                    drawBoard();
+                }, 400);
+
+                showComboBadge();
+            }
+
+            updateScoreDisplay();
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('score').innerText = score;
+        }
+
+        function showComboBadge() {
+            const badge = document.getElementById('combo-badge');
+            document.getElementById('combo').innerText = combo;
+            if (combo > 1) {
+                badge.style.display = 'block';
+            }
+        }
+
+        function hideComboBadge() {
+            document.getElementById('combo-badge').style.display = 'none';
+        }
+
+        function checkGameOver() {
+            let anyMovePossible = false;
+
+            for (let i = 0; i < 3; i++) {
+                const shape = currentRackShapes[i];
+                if (!shape) continue;
+
+                // 模擬將積木放在棋盤上任何一個「可能作為中心點」的地方
+                const { rowOffset, colOffset } = getCenterOffset(shape.matrix);
+
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        const startRow = r - rowOffset;
+                        const startCol = c - colOffset;
+                        if (canPlace(shape.matrix, startRow, startCol)) {
+                            anyMovePossible = true;
+                            break;
+                        }
+                    }
+                    if (anyMovePossible) break;
+                }
+                if (anyMovePossible) break;
+            }
+
+            if (!anyMovePossible && remainingShapes > 0) {
+                endGame();
+            }
+        }
+
+        function endGame() {
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('game-over').style.display = 'flex';
+        }
+
+        function resetGame() {
+            boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+            score = 0;
+            combo = 0;
+            eliminatedInThisRound = false;
+            hideComboBadge();
+            updateScoreDisplay();
+            initBoard();
+            drawBoard();
+            generateRack();
+            document.getElementById('game-over').style.display = 'none';
+        }
+
+        initBoard();
+        drawBoard();
+        generateRack();
+    </script>
+</body>
+</html>
